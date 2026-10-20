@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizzatore di Rubriche di Valutazione</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel Reading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Glassmorphism effects */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        /* Print formatting rules */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            .print-full-width {
+                width: 100% !important;
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .rubric-card {
+                break-inside: avoid;
+                box-shadow: none !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+            body {
+                background: white !important;
+            }
+        }
+
+        /* Descriptor active state visual pulse */
+        .descriptor-cell {
+            transition: all 0.2s ease-in-out;
+        }
+        .descriptor-cell:hover {
+            transform: translateY(-1px);
+        }
+        .descriptor-cell.selected {
+            ring: 2px solid #3b82f6;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <header class="bg-indigo-700 text-white shadow-lg no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-indigo-600 rounded-xl shadow-inner">
+                    <i class="fa-solid fa-graduation-cap text-2xl text-amber-300"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">Visualizzatore Rubriche di Valutazione</h1>
+                    <p class="text-xs text-indigo-200">Carica e visualizza fino a 4 rubriche in modo grafico e interattivo</p>
+                </div>
+            </div>
+
+            <!-- Global Actions -->
+            <div class="flex items-center space-x-2">
+                <button onclick="loadSampleData()" class="px-3.5 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Esempio Pratico
+                </button>
+                <button onclick="clearAllRubrics()" class="px-3.5 py-2 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-trash-can"></i> Svuota Tutto
+                </button>
+                <button onclick="window.print()" class="px-3.5 py-2 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-print"></i> Stampa / PDF
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 print-full-width">
+
+        <!-- Slot Manager Section (No-Print) -->
+        <section class="no-print">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Slot 1 -->
+                <div id="slot-card-1" class="glass-card rounded-xl p-4 flex flex-col justify-between border-2 border-dashed border-slate-300 transition-all hover:border-indigo-400">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Slot 1</span>
+                        <span id="slot-badge-1" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Vuoto</span>
+                    </div>
+                    <div id="slot-content-1" class="my-2 text-center">
+                        <i class="fa-solid fa-file-excel text-2xl text-slate-300 mb-2"></i>
+                        <p id="slot-title-1" class="text-xs font-medium text-slate-600 truncate">Nessun File</p>
+                    </div>
+                    <div class="mt-2 flex gap-1">
+                        <label for="file-1" class="flex-1 cursor-pointer text-center bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors">
+                            <i class="fa-solid fa-upload mr-1"></i> Carica
+                        </label>
+                        <input type="file" id="file-1" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event, 1)">
+                        <button onclick="clearSlot(1)" class="text-slate-400 hover:text-rose-600 px-2 py-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="Rimuovi">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Slot 2 -->
+                <div id="slot-card-2" class="glass-card rounded-xl p-4 flex flex-col justify-between border-2 border-dashed border-slate-300 transition-all hover:border-indigo-400">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Slot 2</span>
+                        <span id="slot-badge-2" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Vuoto</span>
+                    </div>
+                    <div id="slot-content-2" class="my-2 text-center">
+                        <i class="fa-solid fa-file-excel text-2xl text-slate-300 mb-2"></i>
+                        <p id="slot-title-2" class="text-xs font-medium text-slate-600 truncate">Nessun File</p>
+                    </div>
+                    <div class="mt-2 flex gap-1">
+                        <label for="file-2" class="flex-1 cursor-pointer text-center bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors">
+                            <i class="fa-solid fa-upload mr-1"></i> Carica
+                        </label>
+                        <input type="file" id="file-2" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event, 2)">
+                        <button onclick="clearSlot(2)" class="text-slate-400 hover:text-rose-600 px-2 py-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="Rimuovi">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Slot 3 -->
+                <div id="slot-card-3" class="glass-card rounded-xl p-4 flex flex-col justify-between border-2 border-dashed border-slate-300 transition-all hover:border-indigo-400">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Slot 3</span>
+                        <span id="slot-badge-3" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Vuoto</span>
+                    </div>
+                    <div id="slot-content-3" class="my-2 text-center">
+                        <i class="fa-solid fa-file-excel text-2xl text-slate-300 mb-2"></i>
+                        <p id="slot-title-3" class="text-xs font-medium text-slate-600 truncate">Nessun File</p>
+                    </div>
+                    <div class="mt-2 flex gap-1">
+                        <label for="file-3" class="flex-1 cursor-pointer text-center bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors">
+                            <i class="fa-solid fa-upload mr-1"></i> Carica
+                        </label>
+                        <input type="file" id="file-3" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event, 3)">
+                        <button onclick="clearSlot(3)" class="text-slate-400 hover:text-rose-600 px-2 py-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="Rimuovi">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Slot 4 -->
+                <div id="slot-card-4" class="glass-card rounded-xl p-4 flex flex-col justify-between border-2 border-dashed border-slate-300 transition-all hover:border-indigo-400">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Slot 4</span>
+                        <span id="slot-badge-4" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Vuoto</span>
+                    </div>
+                    <div id="slot-content-4" class="my-2 text-center">
+                        <i class="fa-solid fa-file-excel text-2xl text-slate-300 mb-2"></i>
+                        <p id="slot-title-4" class="text-xs font-medium text-slate-600 truncate">Nessun File</p>
+                    </div>
+                    <div class="mt-2 flex gap-1">
+                        <label for="file-4" class="flex-1 cursor-pointer text-center bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors">
+                            <i class="fa-solid fa-upload mr-1"></i> Carica
+                        </label>
+                        <input type="file" id="file-4" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event, 4)">
+                        <button onclick="clearSlot(4)" class="text-slate-400 hover:text-rose-600 px-2 py-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="Rimuovi">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="controls-panel" class="glass-card rounded-xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 no-print hidden">
+            <!-- Navigation Tabs -->
+            <div id="rubric-tabs" class="flex flex-wrap gap-2">
+                <!-- Dynamic tabs inserted here -->
+            </div>
+
+            <!-- View Options -->
+            <div class="flex items-center space-x-3 w-full md:w-auto justify-end">
+                <div class="inline-flex rounded-lg bg-slate-100 p-1 border border-slate-200">
+                    <button id="btn-view-tabs" onclick="setViewMode('tabs')" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-white shadow-sm text-indigo-600">
+                        <i class="fa-solid fa-folder mr-1"></i> Schede
+                    </button>
+                    <button id="btn-view-all" onclick="setViewMode('all')" class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-border-all mr-1"></i> Tutti e 4
+                    </button>
+                </div>
+                
+                <div class="relative">
+                    <input type="text" id="search-filter" oninput="applyFilter()" placeholder="Filtra criteri..." class="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40 sm:w-48">
+                    <i class="fa-solid fa-search absolute left-2.5 top-2.5 text-slate-400 text-xs"></i>
+                </div>
+            </div>
+        </section>
+
+        <section id="rubrics-display-container" class="space-y-8">
+            <!-- Empty State Prompt -->
+            <div id="empty-state" class="bg-white rounded-2xl border-2 border-dashed border-slate-300 p-12 text-center shadow-sm my-8">
+                <div class="max-w-md mx-auto space-y-4">
+                    <div class="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-indigo-600 text-2xl">
+                        <i class="fa-solid fa-table-cells"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800">Nessuna rubrica caricata</h3>
+                    <p class="text-sm text-slate-500">Carica fino a 4 file Excel (.xlsx, .csv) contenenti le tabelle di valutazione, oppure carica l'esempio dimostrativo.</p>
+                    
+                    <div class="pt-2 flex justify-center gap-3">
+                        <button onclick="loadSampleData()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-all shadow-md">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Carica Esempio Completo
+                        </button>
+                    </div>
+
+                    <div class="mt-6 text-left bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
+                        <p class="font-semibold text-slate-700"><i class="fa-solid fa-circle-info mr-1 text-indigo-500"></i> Formato Excel consigliato:</p>
+                        <p><strong>Riga 1:</strong> Titolo/Intestazione (Opzionale o Livelli: <em>Iniziale, Base, Intermedio, Avanzato</em>)</p>
+                        <p><strong>Colonna 1:</strong> Criteri o Dimensioni di valutazione</p>
+                        <p><strong>Colonne successive:</strong> Descrittori per ciascun livello di padronanza</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rubric Cards Rendered dynamically here -->
+            <div id="rubrics-wrapper" class="space-y-8"></div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 mt-auto py-4 no-print text-center text-xs text-slate-500">
+        <p>Visualizzatore Interattivo Rubriche Valutative • Pronto per la stampa ed export PDF</p>
+    </footer>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs py-2.5 px-4 rounded-xl shadow-xl transition-all duration-300 opacity-0 translate-y-4 pointer-events-none z-50 flex items-center space-x-2">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-message">Operazione completata</span>
+    </div>
+
+    <script>
+        // State storage for up to 4 rubrics
+        const rubricsData = {
+            1: null,
+            2: null,
+            3: null,
+            4: null
+        };
+
+        let activeTab = 1;
+        let viewMode = 'tabs'; // 'tabs' or 'all'
+        let selectedScores = {}; // Tracks interactive score selections per rubric slot
+
+        // Color palettes for performance levels
+        const levelColors = [
+            { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', badge: 'bg-rose-100 text-rose-800' },      // Level 1 / Iniziale
+            { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-800' },   // Level 2 / Base
+            { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' },       // Level 3 / Intermedio
+            { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800' }, // Level 4 / Avanzato
+            { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', badge: 'bg-purple-100 text-purple-800' },  // Level 5
+            { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700', badge: 'bg-cyan-100 text-cyan-800' }        // Extra Level
+        ];
+
+        function handleFileUpload(event, slotIndex) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Take the first sheet
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const rawJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    processRubricData(rawJson, file.name, slotIndex);
+                    showToast(`Rubrica "${file.name}" caricata con successo!`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Errore durante la lettura del file Excel/CSV.', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Process raw array format into structured rubric
+        function processRubricData(rows, fileName, slotIndex) {
+            // Filter empty rows
+            const cleanRows = rows.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== ''));
+            
+            if (cleanRows.length < 2) {
+                showToast('Il file sembra non contenere abbastanza dati validi.', 'error');
+                return;
+            }
+
+            // Assume row 0 or first formatted row is header (Criteria | Level 1 | Level 2 | ...)
+            let headerRowIndex = 0;
+            const headers = cleanRows[headerRowIndex].map(h => String(h || '').trim());
+
+            const criterionHeader = headers[0] || 'Criteri';
+            const levels = headers.slice(1).filter(h => h.length > 0);
+
+            const criteriaData = [];
+            for (let i = headerRowIndex + 1; i < cleanRows.length; i++) {
+                const row = cleanRows[i];
+                if (!row[0]) continue; // Skip if no criterion title
+
+                const criterionTitle = String(row[0]).trim();
+                const descriptors = [];
+
+                for (let j = 1; j <= levels.length; j++) {
+                    descriptors.push(row[j] ? String(row[j]).trim() : '-');
+                }
+
+                criteriaData.push({
+                    id: i,
+                    title: criterionTitle,
+                    descriptors: descriptors
+                });
+            }
+
+            rubricsData[slotIndex] = {
+                title: fileName.replace(/\.[^/.]+$/, ""),
+                fileName: fileName,
+                criterionHeader: criterionHeader,
+                levels: levels,
+                criteria: criteriaData
+            };
+
+            // Initialize score tracking for this slot
+            selectedScores[slotIndex] = {};
+
+            updateUI();
+        }
+
+        function updateUI() {
+            const activeSlots = Object.keys(rubricsData).filter(s => rubricsData[s] !== null);
+
+            // Update slot manager UI
+            for (let i = 1; i <= 4; i++) {
+                const card = document.getElementById(`slot-card-${i}`);
+                const badge = document.getElementById(`slot-badge-${i}`);
+                const title = document.getElementById(`slot-title-${i}`);
+
+                if (rubricsData[i]) {
+                    card.classList.remove('border-dashed', 'border-slate-300');
+                    card.classList.add('border-solid', 'border-indigo-400', 'bg-indigo-50/20');
+                    badge.className = "text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold";
+                    badge.innerText = "Caricato";
+                    title.innerText = rubricsData[i].title;
+                    title.className = "text-xs font-bold text-indigo-900 truncate";
+                } else {
+                    card.classList.add('border-dashed', 'border-slate-300');
+                    card.classList.remove('border-solid', 'border-indigo-400', 'bg-indigo-50/20');
+                    badge.className = "text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500";
+                    badge.innerText = "Vuoto";
+                    title.innerText = "Nessun File";
+                    title.className = "text-xs font-medium text-slate-600 truncate";
+                }
+            }
+
+            if (activeSlots.length === 0) {
+                document.getElementById('empty-state').classList.remove('hidden');
+                document.getElementById('controls-panel').classList.add('hidden');
+                document.getElementById('rubrics-wrapper').innerHTML = '';
+                return;
+            }
+
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('controls-panel').classList.remove('hidden');
+
+            // Set activeTab if current activeTab is null
+            if (!rubricsData[activeTab]) {
+                activeTab = parseInt(activeSlots[0]);
+            }
+
+            renderTabs(activeSlots);
+            renderRubrics();
+        }
+
+        function renderTabs(activeSlots) {
+            const tabsContainer = document.getElementById('rubric-tabs');
+            tabsContainer.innerHTML = '';
+
+            activeSlots.forEach(slot => {
+                const slotNum = parseInt(slot);
+                const isSelected = (viewMode === 'tabs' && activeTab === slotNum);
+                const btn = document.createElement('button');
+                btn.onclick = () => {
+                    activeTab = slotNum;
+                    if (viewMode === 'all') setViewMode('tabs');
+                    updateUI();
+                };
+
+                btn.className = `px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                    isSelected 
+                        ? 'bg-indigo-600 text-white shadow-md' 
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`;
+
+                btn.innerHTML = `
+                    <span class="w-2 h-2 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-indigo-500'}"></span>
+                    <span>Rubrica ${slotNum}: ${rubricsData[slotNum].title}</span>
+                `;
+                tabsContainer.appendChild(btn);
+            });
+        }
+
+        function renderRubrics() {
+            const wrapper = document.getElementById('rubrics-wrapper');
+            wrapper.innerHTML = '';
+
+            const slotsToRender = (viewMode === 'all') 
+                ? [1, 2, 3, 4].filter(s => rubricsData[s] !== null)
+                : [activeTab];
+
+            slotsToRender.forEach(slot => {
+                const rubric = rubricsData[slot];
+                if (!rubric) return;
+
+                const rubricCard = document.createElement('div');
+                rubricCard.className = "glass-card rubric-card rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all";
+                rubricCard.id = `rubric-display-${slot}`;
+
+                // Header
+                let html = `
+                    <div class="bg-gradient-to-r from-slate-900 to-indigo-900 text-white p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="bg-indigo-500/30 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-indigo-400/30">
+                                    Slot ${slot}
+                                </span>
+                                <span class="text-xs text-slate-300"><i class="fa-solid fa-file-excel mr-1"></i> ${rubric.fileName}</span>
+                            </div>
+                            <h2 class="text-xl font-bold tracking-tight text-white">${rubric.title}</h2>
+                        </div>
+                        <div class="flex items-center gap-2 no-print">
+                            <span id="score-summary-${slot}" class="text-xs bg-indigo-800/80 text-amber-300 px-3 py-1.5 rounded-xl border border-indigo-600/50 font-semibold">
+                                Valutazione Selezionata: --
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 sm:p-6 overflow-x-auto">
+                        <table class="w-full text-left border-collapse min-w-[650px]">
+                            <thead>
+                                <tr class="border-b-2 border-slate-200">
+                                    <th class="p-3 text-xs font-bold uppercase tracking-wider text-slate-600 bg-slate-100/80 rounded-tl-xl w-1/5">
+                                        ${escapeHtml(rubric.criterionHeader)}
+                                    </th>
+                `;
+
+                // Render Level Headers
+                rubric.levels.forEach((level, idx) => {
+                    const colorScheme = levelColors[idx % levelColors.length];
+                    const isLast = idx === rubric.levels.length - 1;
+                    html += `
+                        <th class="p-3 text-xs font-bold uppercase tracking-wider text-center ${colorScheme.text} ${colorScheme.bg} border-l border-slate-200/60 ${isLast ? 'rounded-tr-xl' : ''}">
+                            <div class="flex flex-col items-center justify-center gap-1">
+                                <span>${escapeHtml(level)}</span>
+                                <span class="text-[10px] opacity-75 font-normal px-2 py-0.5 rounded-full ${colorScheme.badge}">Livello ${idx + 1}</span>
+                            </div>
+                        </th>
+                    `;
+                });
+
+                html += `
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 text-xs text-slate-700">
+                `;
+
+                // Render Criteria Rows
+                rubric.criteria.forEach((crit, cIdx) => {
+                    html += `
+                        <tr class="criterion-row hover:bg-slate-50/50 transition-colors" data-criterion="${escapeHtml(crit.title).toLowerCase()}">
+                            <td class="p-3.5 font-semibold text-slate-800 bg-slate-50/50 align-top border-r border-slate-200/60">
+                                <div class="flex items-start gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></span>
+                                    <span>${escapeHtml(crit.title)}</span>
+                                </div>
+                            </td>
+                    `;
+
+                    crit.descriptors.forEach((desc, dIdx) => {
+                        const colorScheme = levelColors[dIdx % levelColors.length];
+                        const isSelected = selectedScores[slot] && selectedScores[slot][cIdx] === dIdx;
+
+                        html += `
+                            <td onclick="selectDescriptor(${slot}, ${cIdx}, ${dIdx})" 
+                                class="p-3.5 align-top border-l border-slate-200/60 descriptor-cell cursor-pointer ${isSelected ? 'bg-indigo-100/70 ring-2 ring-indigo-500 font-medium' : 'hover:' + colorScheme.bg}">
+                                <div class="h-full flex flex-col justify-between">
+                                    <p class="leading-relaxed text-slate-700">${escapeHtml(desc)}</p>
+                                    ${isSelected ? '<div class="mt-2 text-right text-indigo-600"><i class="fa-solid fa-circle-check"></i></div>' : ''}
+                                </div>
+                            </td>
+                        `;
+                    });
+
+                    html += `</tr>`;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                rubricCard.innerHTML = html;
+                wrapper.appendChild(rubricCard);
+            });
+
+            applyFilter();
+        }
+
+        function selectDescriptor(slot, criterionIndex, levelIndex) {
+            if (!selectedScores[slot]) selectedScores[slot] = {};
+
+            // Toggle off if clicking same level
+            if (selectedScores[slot][criterionIndex] === levelIndex) {
+                delete selectedScores[slot][criterionIndex];
+            } else {
+                selectedScores[slot][criterionIndex] = levelIndex;
+            }
+
+            renderRubrics();
+            updateScoreSummary(slot);
+        }
+
+        function updateScoreSummary(slot) {
+            const summaryElem = document.getElementById(`score-summary-${slot}`);
+            if (!summaryElem) return;
+
+            const scores = selectedScores[slot] || {};
+            const keys = Object.keys(scores);
+            const totalCriteria = rubricsData[slot].criteria.length;
+
+            if (keys.length === 0) {
+                summaryElem.innerText = "Valutazione Selezionata: --";
+                return;
+            }
+
+            let sumLevels = 0;
+            keys.forEach(k => {
+                sumLevels += (scores[k] + 1); // 1-indexed score
+            });
+
+            const avg = (sumLevels / keys.length).toFixed(1);
+            summaryElem.innerText = `Selezionati ${keys.length}/${totalCriteria} criteri | Media: ${avg}`;
+        }
+
+        function setViewMode(mode) {
+            viewMode = mode;
+            const btnTabs = document.getElementById('btn-view-tabs');
+            const btnAll = document.getElementById('btn-view-all');
+
+            if (mode === 'tabs') {
+                btnTabs.className = "px-3 py-1.5 text-xs font-semibold rounded-md bg-white shadow-sm text-indigo-600";
+                btnAll.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900";
+            } else {
+                btnAll.className = "px-3 py-1.5 text-xs font-semibold rounded-md bg-white shadow-sm text-indigo-600";
+                btnTabs.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900";
+            }
+
+            updateUI();
+        }
+
+        function applyFilter() {
+            const query = document.getElementById('search-filter').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('.criterion-row');
+
+            rows.forEach(row => {
+                const critName = row.getAttribute('data-criterion') || '';
+                if (critName.includes(query)) {
+                    row.classList.remove('hidden');
+                } else {
+                    row.classList.add('hidden');
+                }
+            });
+        }
+
+        function clearSlot(slotIndex) {
+            rubricsData[slotIndex] = null;
+            delete selectedScores[slotIndex];
+            document.getElementById(`file-${slotIndex}`).value = '';
+            showToast(`Slot ${slotIndex} svuotato.`, 'info');
+            updateUI();
+        }
+
+        function clearAllRubrics() {
+            for (let i = 1; i <= 4; i++) {
+                rubricsData[i] = null;
+                delete selectedScores[i];
+                const input = document.getElementById(`file-${i}`);
+                if (input) input.value = '';
+            }
+            showToast('Tutte le rubriche sono state rimosse.', 'info');
+            updateUI();
+        }
+
+        function loadSampleData() {
+            const sampleRubric1 = [
+                ["Criteri di Valutazione", "Avanzato (4)", "Intermedio (3)", "Base (2)", "Iniziale (1)"],
+                ["Aderenza alla consegna", "Rispetta pienamente tutte le consegne espandendo i contenuti in modo originale.", "Rispetta le consegne in modo completo ed esatto.", "Rispetta le consegne principali con qualche imprecisione secondaria.", "Parziale ed incompleto rispetto alle consegne richieste."],
+                ["Rielaborazione e contenuti", "Dimostra padronanza critica, nessi interdisciplinari e rielaborazione personale.", "Contenuti corretti, con elaborazione ben strutturata ed esaustiva.", "Esposizione semplice ma corretta dei contenuti fondamentali.", "Contenuti frammentari o privi di rielaborazione."],
+                ["Proprietà di linguaggio", "Uso rigoroso e appropriato del lessico specifico e terminologico.", "Uso corretto ed esposto con chiarezza del lessico di settore.", "Uso elementare del linguaggio con qualche incertezza terminologica.", "Uso improprio o molto limitato del lessico specifico."]
+            ];
+
+            const sampleRubric2 = [
+                ["Competenza Digitale", "Livello 4 (Eccellente)", "Livello 3 (Buono)", "Livello 2 (Sufficiente)", "Livello 1 (Iniziale)"],
+                ["Uso degli strumenti", "Autonomo nell'uso di software complessi e risoluzione di problemi tecnici.", "Utilizza i software con buone abilità e risolve problemi semplici.", "Richiede supporto occasionale per l'utilizzo dei programmi base.", "Richiede guida costante per l'accesso e l'uso degli strumenti."],
+                ["Collaborazione online", "Organizza e coordina efficacemente gruppi di lavoro in ambienti digitali.", "Partecipa attivamente al lavoro condiviso fornendo contributi validi.", "Collabora se stimolato all'interno della piattaforma comune.", "Interazione limitata o passiva nelle attività di gruppo online."]
+            ];
+
+            processRubricData(sampleRubric1, "Rubrica_Italiano_Esposizione.xlsx", 1);
+            processRubricData(sampleRubric2, "Rubrica_Competenze_Digitali.xlsx", 2);
+
+            showToast('Esempi caricati negli Slot 1 e 2!', 'success');
+        }
+
+        // Utility: Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMsg.innerText = message;
+
+            if (type === 'success') {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400";
+            } else if (type === 'error') {
+                toastIcon.className = "fa-solid fa-triangle-exclamation text-rose-400";
+            } else {
+                toastIcon.className = "fa-solid fa-circle-info text-blue-400";
+            }
+
+            toast.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+                toast.classList.remove('opacity-100', 'translate-y-0');
+            }, 3000);
+        }
+
+        // Utility: HTML Sanitizer
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Initialize empty state on load
+        window.onload = function() {
+            updateUI();
+        };
+    </script>
+</body>
+</html>
